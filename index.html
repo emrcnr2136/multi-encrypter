@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Çoklu Şifreleme Aracı</title>
+<style>
+    body {
+        font-family: 'Segoe UI', sans-serif;
+        max-width: 800px;
+        margin: 30px auto;
+        background: #f0f4f8;
+        color: #333;
+    }
+    h1 { text-align: center; color: #2c3e50; }
+    select, textarea, button {
+        width: 100%;
+        margin: 10px 0;
+        font-size: 16px;
+    }
+    textarea { height: 100px; padding: 10px; }
+    button {
+        padding: 10px;
+        cursor: pointer;
+        border: none;
+        color: #fff;
+        font-weight: bold;
+        margin-top: 5px;
+    }
+    #encryptBtn { background: #3498db; }
+    #decryptBtn { background: #2ecc71; }
+    #output { background: #222; color: #0f0; padding: 10px; min-height: 100px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<h1> Çoklu Şifreleme Aracı</h1>
+
+<label>Şifreleme Yöntemi:</label>
+<select id="method">
+    <option value="fibonacci">Fibonacci</option>
+    <option value="cesar">Sezar(-3)</option>
+    <option value="rot13">ROT13</option>
+    <option value="base64">Base64</option>
+</select>
+
+<label>Metin:</label>
+<textarea id="inputText"></textarea>
+
+<button id="encryptBtn">Şifrele</button>
+<button id="decryptBtn">Çöz</button>
+
+<h3>Sonuç:</h3>
+<div id="output"></div>
+
+<script>
+// ==========================
+// Fibonacci Şifreleme (JS) - Mevcut algoritma
+// ==========================
+const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const m = 64;
+
+function fibonacci(n) {
+    let F = [0,1];
+    for(let i=2;i<=n;i++) F.push(F[F.length-1]+F[F.length-2]);
+    return F;
+}
+
+function fibonacciTriangle(depth){
+    const F = fibonacci(depth*2+5);
+    let T=[];
+    for(let r=0;r<depth;r++){
+        let row=[];
+        for(let c=0;c<=r;c++) row.push(F[r+c+1]);
+        T.push(row);
+    }
+    return T;
+}
+
+function getKeyMatrix(T,r,c){ return [[T[r][c],T[r][c+1]],[T[r+1][c],T[r+1][c+1]]]; }
+function modInverse(a,m){ a%=m; for(let x=1;x<m;x++) if((a*x)%m===1) return x; return null; }
+function matvecMul(K,v){ return [(K[0][0]*v[0]+K[0][1]*v[1])%m,(K[1][0]*v[0]+K[1][1]*v[1])%m]; }
+function invertMatrix(K){ let [a,b]=K[0]; let [c,d]=K[1]; let det=(a*d-b*c)%m; let inv=modInverse(det,m); if(inv===null) throw "Matris terslenemedi!"; return [[(d*inv)%m,(-b*inv)%m],[(-c*inv)%m,(a*inv)%m]]; }
+function charToNum(c){ return B64.indexOf(c); }
+function numToChar(n){ return B64[n]; }
+
+const T = fibonacciTriangle(10);
+
+function fibonacciEncrypt(msg,r=2,c=1){
+    let b64=btoa(unescape(encodeURIComponent(msg))).replace(/=+$/g,"");
+    let nums=[...b64].map(charToNum);
+    let L=nums.length;
+    let header=numToChar(Math.floor(L/m))+numToChar(L%m);
+    if(nums.length%2===1) nums.push(0);
+    let K=getKeyMatrix(T,r,c);
+    let cipher=[];
+    for(let i=0;i<nums.length;i+=2){ let enc=matvecMul(K,[nums[i],nums[i+1]]); cipher.push(...enc); }
+    return header+cipher.map(numToChar).join("");
+}
+function fibonacciDecrypt(cipher,r=2,c=1){
+    let hi=charToNum(cipher[0]),lo=charToNum(cipher[1]),L=hi*m+lo;
+    let nums=[...cipher.slice(2)].map(charToNum);
+    let K=getKeyMatrix(T,r,c),Kinv=invertMatrix(K);
+    let out=[];
+    for(let i=0;i<nums.length;i+=2) out.push(...matvecMul(Kinv,[nums[i],nums[i+1]]));
+    out=out.slice(0,L);
+    let b64=out.map(numToChar).join("");
+    b64+="=".repeat((4-L%4)%4);
+    try{ return decodeURIComponent(escape(atob(b64))); }catch{return "(Hatalı veri)";}
+}
+
+// ==========================
+// 2️⃣ Sezar Şifreleme
+// ==========================
+function cesarEncrypt(msg,shift=3){
+    return [...msg].map(c=>{
+        let code=c.charCodeAt(0);
+        return String.fromCharCode(code+shift);
+    }).join("");
+}
+function cesarDecrypt(msg,shift=3){
+    return [...msg].map(c=>{
+        let code=c.charCodeAt(0);
+        return String.fromCharCode(code-shift);
+    }).join("");
+}
+
+// ==========================
+// 3️⃣ ROT13
+// ==========================
+function rot13Encrypt(msg){ return msg.replace(/[A-Za-z]/g,c=>String.fromCharCode((c<="Z"?90:122)>=c.charCodeAt(0)?((c.charCodeAt(0)-((c<="Z"?65:97)+13))%26)+((c<="Z"?65:97)+13):c.charCodeAt(0))); }
+function rot13Decrypt(msg){ return rot13Encrypt(msg); } // simetrik
+
+// ==========================
+// 4️⃣ Base64
+// ==========================
+function base64Encrypt(msg){ return btoa(unescape(encodeURIComponent(msg))); }
+function base64Decrypt(msg){ return decodeURIComponent(escape(atob(msg))); }
+
+// ==========================
+// UI
+// ==========================
+document.getElementById("encryptBtn").onclick=function(){
+    const txt=document.getElementById("inputText").value;
+    const method=document.getElementById("method").value;
+    let res="";
+    try{
+        if(method==="fibonacci") res=fibonacciEncrypt(txt);
+        else if(method==="cesar") res=cesarEncrypt(txt);
+        else if(method==="rot13") res=rot13Encrypt(txt);
+        else if(method==="base64") res=base64Encrypt(txt);
+    }catch(e){ res="Hata: "+e; }
+    document.getElementById("output").innerText=res;
+};
+
+document.getElementById("decryptBtn").onclick=function(){
+    const txt=document.getElementById("inputText").value;
+    const method=document.getElementById("method").value;
+    let res="";
+    try{
+        if(method==="fibonacci") res=fibonacciDecrypt(txt);
+        else if(method==="cesar") res=cesarDecrypt(txt);
+        else if(method==="rot13") res=rot13Decrypt(txt);
+        else if(method==="base64") res=base64Decrypt(txt);
+    }catch(e){ res="Hata: "+e; }
+    document.getElementById("output").innerText=res;
+};
+</script>
+</body>
+</html>
+
